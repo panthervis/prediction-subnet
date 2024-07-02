@@ -1,7 +1,7 @@
 from communex.module import Module, endpoint
 from communex.key import generate_keypair
 from keylimiter import TokenBucketLimiter
-
+from prediction.miner.prediction import Prediction
 
 class Miner(Module):
     """
@@ -13,9 +13,8 @@ class Miner(Module):
     Methods:
         generate: Generates a response to a given prompt using a specified model.
     """
-
     @endpoint
-    def generate(self, prompt: str, model: str = "foo"):
+    def generate(self, category: str, type: str):
         """
         Generates a response to a given prompt using a specified model.
 
@@ -26,7 +25,28 @@ class Miner(Module):
         Returns:
             None
         """
-        print(f"Answering: `{prompt}` with model `{model}`")
+        predictions = []
+        match category:
+            case "crypto":
+                if (type == "BTCUSDT"):
+                    base_currency = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+                    quote_currency = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+                    time_interval = 60
+                    p = Prediction(base_currency, quote_currency, time_interval)
+                    predictions = p.predict()
+            case "forex":
+                pass
+            case "gambling":
+                pass
+            case "betting":
+                pass
+            case "weather":    
+                pass
+            case _:
+                pass
+                
+                
+        print(f"Answering prediction for {category} category & {type} type: {predictions}")
 
 
 if __name__ == "__main__":
