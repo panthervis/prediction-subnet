@@ -1,23 +1,47 @@
 # Prediction Subnet
 
-Innovative time-series prediction subnet which will provide any time-series prediction data in crypto, forex, gambling, betting, whether, and more based on intensive competition among miners with state-of-the-art models.
+The Prediction Subnet is an advanced time-series prediction platform designed to support a wide range of domains including cryptocurrency, foreign exchange (forex), gambling, betting, and weather predictions. This platform leverages a competitive model where miners (prediction models) compete to provide the most accurate predictions, earning incentives based on their performance.
 
 
 ## Overview
-Prediction subnet will organize competition between miner modules. The more similar to real value to produce for longer time period, the more incentive a miner will get.
+Prediction Subnet orchestrates a dynamic competition among various miner modules equipped with state-of-the-art predictive models. The system emphasizes long-term accuracy in predictions, rewarding miners who consistently align closely with real-world outcomes.
 
-## Validator
-Validators will periodically send time-series prediction request selecting random categories and type for randomly selected timestamp in next 8 hours.
-Upon getting prediction response from miners, it will distribute incentives in sigmoid function on how close the prediction is to the real value.
+## How It Works
+Validators: Validators operate as the orchestrators within the subnet. They periodically request predictions for random categories and types, selecting timestamps within the next 8 hours. Upon receiving predictions, validators assess the accuracy using a sigmoid function to determine how closely predictions align with actual outcomes, subsequently distributing incentives based on this accuracy.
 
+Miners: Miners respond to requests from validators with predictions. They are encouraged to utilize any effective methods at their disposal to ensure accuracy. Miners can specialize in specific categories to optimize their predictive capabilities.
+
+## Getting Started
+### Prerequisites
+Ensure you have Python 3.10+ installed on your system. You can verify this by running:
+```sh
+python --version
+```
+### Installation
+Clone the repository to your local machine:
+
+```sh
+git clone https://github.com/yourusername/prediction-subnet.git
+cd prediction-subnet
+```
+
+Install required dependencies:
+```sh
+pip install -r requirements.txt
+```
+
+### Validator Setup
+Run the validator script to start validating predictions. Replace <name-of-your-com-key> with your actual key.
 ```sh
 python3 validator/validation.py <name-of-your-com-key>
 ```
 
-## Miner
-Miners should respond to validator's request with most correct prediction. Miners are proposed to utilize any methods to provide prediction results. Miners can choose what they are best at prediction among categories from predictoinList.json
+### Miner Setup
+Start your miner by running the miner application. Ensure your key is correctly configured.
 
 ```sh
 python3 miner/app.py <name-of-your-com-key>
 ```
 
+## License
+Distributed under the MIT License. See LICENSE for more information.
