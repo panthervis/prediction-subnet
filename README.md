@@ -1,42 +1,23 @@
-# Commune Subnet Templeate
+# Prediction Subnet
 
-Subnet template built on top of [CommuneX](https://github.com/agicommies/communex).
+Innovative time-series prediction subnet which will provide any time-series prediction data in crypto, forex, gambling, betting, whether, and more based on intensive competition among miners with state-of-the-art models.
 
-Lern how to structure, build and deploy a subnet on [Commune AI](https://communeai.org/)!
 
-## Dependencies
+## Overview
+Prediction subnet will organize competition between miner modules. The more similar to real value to produce for longer time period, the more incentive a miner will get.
 
-The whole subnet template is built on top of the [CommuneX library / SDK](https://github.com/agicommies/communex).
-Which is truly the only essential dependency.
+## Validator
+Validators will periodically send time-series prediction request selecting random categories and type for randomly selected timestamp in next 8 hours.
+Upon getting prediction response from miners, it will distribute incentives in sigmoid function on how close the prediction is to the real value.
 
-Although in order to make the template more explict we also provide additional libraries.
-You can find the whole dependency list we used in the [requirements.txt](./requirements.txt) file.
-
-```txt
-communex
-typer
-uvicorn
-keylimiter
-pydantic-settings
+```sh
+python3 validator/validation.py <name-of-your-com-key>
 ```
 
 ## Miner
-
-From the root of your project, you can just call **comx module serve**. For example:
-
-```sh
-comx module serve commune-subnet-template.subnet.miner.model.Miner <name-of-your-com-key> [--subnets-whitelist <your-subnet-netuid>] \
-[--ip <text>] [--port <number>]
-```
-
-## Validator
-
-To run the validator, just call the file in which you are executing `validator.validate_loop()`. For example:
+Miners should respond to validator's request with most correct prediction. Miners are proposed to utilize any methods to provide prediction results. Miners can choose what they are best at prediction among categories from predictoinList.json
 
 ```sh
-python3 -m commune-subnet-template.subnet.cli <name-of-your-com-key>
+python3 miner/app.py <name-of-your-com-key>
 ```
 
-## Further reading
-
-For full documentation of the Commune AI ecosystem, please visit the [Official Commune Page](https://communeai.org/), and it's developer documentation. There you can learn about all subnet details, deployment, and more!

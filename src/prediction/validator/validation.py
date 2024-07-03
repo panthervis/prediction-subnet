@@ -372,13 +372,7 @@ class Validation(Module):
             return_exceptions=True
         )
         
-        # get_miner_prediction = partial(self._get_miner_prediction, miner_prompt)
-
         log(f"Selected the following miners: {modules_info.keys()}")
-
-        # with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        #     it = executor.map(get_miner_prediction, modules_info.values())
-        #     miner_answers = [*it]
 
         time_to_wait = (future_timestamp - datetime.now()).total_seconds()
         
@@ -389,9 +383,6 @@ class Validation(Module):
         
         real_data = await self.fetch_real_data()
         
-        # validation_time = datetime.now() + datetime.timedelta(hours=8)
-        # asyncio.create_task(self.delayed_scoring(validation_time, miner_answers, netuid, settings))
-        # here might be the place the logic placed
         for uid, miner_response in zip(modules_info.keys(), predictions):
             miner_answer = miner_response
             if not miner_answer:

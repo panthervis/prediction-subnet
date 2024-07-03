@@ -6,7 +6,7 @@ from communex.client import CommuneClient  # type: ignore
 from communex.compat.key import classic_load_key  # type: ignore
 
 from src.prediction.validator._config import ValidatorSettings
-from src.prediction.validator.validator import get_subnet_netuid, Validator
+from src.prediction.validator.validation import get_subnet_netuid, Validation
 
 app = typer.Typer()
 
@@ -21,8 +21,8 @@ def serve(
     keypair = classic_load_key(commune_key)  # type: ignore
     settings = ValidatorSettings()  # type: ignore
     c_client = CommuneClient(get_node_url())
-    subnet_uid = get_subnet_netuid("your-subnet-name")
-    validator = Validator(
+    subnet_uid = get_subnet_netuid("prediction")
+    validator = Validation(
         keypair,
         subnet_uid,
         c_client,
