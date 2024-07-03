@@ -1,6 +1,8 @@
 from typing import Literal, Any
 import datetime
 import csv
+from datetime import datetime, timedelta
+import random
 
 def iso_timestamp_now() -> str:
     now = datetime.datetime.now(tz=datetime.timezone.utc)
@@ -40,3 +42,19 @@ def export_to_csv(data, filename):
             close_price = candlestick['close']
 
             writer.writerow([time, pair, quote_amount, open_price, high_price, low_price, close_price])
+            
+def dateToTimestamp(date_string):
+    formatted_date_string = date_string.replace('h', ':').replace('m', ':').replace('s', '')
+    formatted_date_string = formatted_date_string.replace('.', '-')
+
+    date_format = "%Y-%m-%d.%H:%M:%S"
+    date_object = datetime.strptime(formatted_date_string, date_format)
+
+    return date_object.timestamp()
+
+def get_random_future_timestamp(hours_ahead=8):
+    now = datetime.now()
+    random_seconds = random.randint(0, hours_ahead * 3600)
+    random_future_timestamp = now + timedelta(seconds=random_seconds)
+    
+    return random_future_timestamp

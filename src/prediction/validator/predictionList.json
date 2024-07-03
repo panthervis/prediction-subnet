@@ -1,0 +1,4 @@
+{
+    "crypto": ["BTCUSDT", "ETHUSDT"],
+    "forex": ["USDEURO"]
+}
