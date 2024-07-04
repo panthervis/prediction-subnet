@@ -20,7 +20,6 @@ Constants:
 """
 
 import asyncio
-import concurrent.futures
 import re
 import time
 from functools import partial
@@ -32,10 +31,11 @@ from communex.client import CommuneClient
 from communex.module.client import ModuleClient
 from communex.module.module import Module
 from communex.types import Ss58Address
+from communex.misc import get_map_modules
 from substrateinterface import Keypair
 
-from ._config import ValidatorSettings
-from ..utils import dateToTimestamp, get_random_future_timestamp, log
+from _config import ValidatorSettings
+from prediction.utils import dateToTimestamp, get_random_future_timestamp, log
 
 IP_REGEX = re.compile(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+")
 
@@ -269,20 +269,22 @@ class Validation(Module):
 
         return abs(real_answer - miner_answer)
 
-    def fetch_real_data(self, category, type):
-        # Define the endpoint URL
+    def fetch_real_data(self, category, type, unix_timestamp):
         url = 'https://api.binance.com/api/v3/klines'
 
         # Define the symbol and interval
         symbol = type
-        interval = '1h'
+        interval = '1m'  # 1 minute interval
 
-        end_time = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-        start_time = end_time - datetime.timedelta(hours=8)
+        # Convert the UNIX timestamp to a datetime object
+        target_time = datetime.utcfromtimestamp(unix_timestamp)
 
-        # Convert start and end times to milliseconds since the Unix epoch
-        start_time_ms = int(start_time.timestamp() * 1000)
-        end_time_ms = int(end_time.timestamp() * 1000) - 1 
+        # Round down to the nearest minute
+        target_time = target_time.replace(second=0, microsecond=0)
+
+        # Calculate start and end times in milliseconds for the API call
+        start_time_ms = int(target_time.timestamp() * 1000)
+        end_time_ms = start_time_ms + 60000  # 60000 milliseconds = 1 minute
 
         # Prepare parameters for the API request
         params = {
@@ -290,7 +292,7 @@ class Validation(Module):
             'interval': interval,
             'startTime': start_time_ms,
             'endTime': end_time_ms,
-            'limit': 8  # We want exactly 8 data points
+            'limit': 1  # We want exactly 1 data point
         }
 
         # Make the HTTP request
@@ -300,17 +302,22 @@ class Validation(Module):
         if response.status_code == 200:
             data = response.json()
             # Each data point includes [Open time, Open, High, Low, Close, Volume, Close time, ...]
-            for candle in data:
-                open_time = datetime.fromtimestamp(candle[0] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+            if data:
+                candle = data[0]
+                open_time = datetime.utcfromtimestamp(candle[0] / 1000).strftime('%Y-%m-%d %H:%M:%S')
                 close_price = candle[4]
-                print(f"Time: {open_time}, Close Price: {close_price}")
+                return {'time': open_time, 'close_price': close_price}
+            else:
+                print("No data available for the given timestamp.")
+                return None
         else:
             print("Failed to fetch data:", response.status_code)
+            return None
     
-    def store_response(self, miner_id, prediction, timestamp):
-        if timestamp not in self.pending_validations:
-            self.pending_validations[timestamp] = {}
-        self.pending_validations[timestamp][miner_id] = prediction
+    # def store_response(self, miner_id, prediction, timestamp):
+    #     if timestamp not in self.pending_validations:
+    #         self.pending_validations[timestamp] = {}
+    #     self.pending_validations[timestamp][miner_id] = prediction
 
     def get_miner_prompt(self) -> str:
         """
@@ -402,7 +409,7 @@ class Validation(Module):
         score_dict = {uid: self.sigmoid((score - min_score) / (max_score - min_score)) for uid, score in base_score_dict.items()}
         
         # combining with original score
-
+        all_modules = get_map_modules(self.client, self.netuid)
         # the blockchain call to set the weights
         _ = set_weights(settings, score_dict, self.netuid, self.client, self.key)
     
