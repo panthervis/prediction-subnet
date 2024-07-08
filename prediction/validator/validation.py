@@ -25,7 +25,7 @@ import time
 from functools import partial
 import numpy as np
 import requests
-import datetime
+from datetime import datetime
 
 from communex.client import CommuneClient
 from communex.module.client import ModuleClient
@@ -34,7 +34,7 @@ from communex.types import Ss58Address
 from communex.misc import get_map_modules
 from substrateinterface import Keypair
 
-from _config import ValidatorSettings
+from prediction.validator._config import ValidatorSettings
 from prediction.utils import dateToTimestamp, get_random_future_timestamp, log
 
 IP_REGEX = re.compile(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+")
@@ -117,7 +117,7 @@ def extract_address(string: str):
     return re.search(IP_REGEX, string)
 
 
-def get_subnet_netuid(clinet: CommuneClient, subnet_name: str = "replace-with-your-subnet-name"):
+def get_subnet_netuid(clinet: CommuneClient, subnet_name: str = "prediction"):
     """
     Retrieve the network UID of the subnet.
 
@@ -381,7 +381,7 @@ class Validation(Module):
         
         log(f"Selected the following miners: {modules_info.keys()}")
 
-        time_to_wait = (future_timestamp - datetime.now()).total_seconds()
+        time_to_wait = (datetime.fromtimestamp(future_timestamp) - datetime.now()).total_seconds()
         
         if time_to_wait > 0:
             await asyncio.sleep(time_to_wait)

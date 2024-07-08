@@ -33,14 +33,14 @@ pip install -r requirements.txt
 ### Validator Setup
 Run the validator script to start validating predictions. Replace <name-of-your-com-key> with your actual key.
 ```sh
-python3 validator/validation.py <name-of-your-com-key>
+python3 -m validator/cli.py <name-of-your-com-key>
 ```
 
 ### Miner Setup
 Start your miner by running the miner application. Ensure your key is correctly configured.
 
 ```sh
-python3 miner/app.py <name-of-your-com-key>
+python3 -m validator/cli.py <name-of-your-com-key>
 ```
 
 ## License

@@ -1,11 +1,11 @@
 from typing import Literal, Any
 import datetime
 import csv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import random
 
 def iso_timestamp_now() -> str:
-    now = datetime.datetime.now(tz=datetime.timezone.utc)
+    now = datetime.now(tz=timezone.utc)
     iso_now = now.isoformat()
     return iso_now
 
@@ -57,4 +57,4 @@ def get_random_future_timestamp(hours_ahead=8):
     random_seconds = random.randint(0, hours_ahead * 3600)
     random_future_timestamp = now + timedelta(seconds=random_seconds)
     
-    return random_future_timestamp
+    return random_future_timestamp.timestamp()

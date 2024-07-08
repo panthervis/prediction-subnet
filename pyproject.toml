@@ -1,0 +1,41 @@
+[tool.poetry]
+name = "prediction"
+version = "0.1.0"
+description = "Time series prediction subnet in Commune"
+authors = ["Moonifier <c0087ms1@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.10, <4.0"
+
+typer = "^0.9.0"
+python-dotenv = "^1.0.1"
+pydantic-settings = "^2.2.1"
+
+communex= "^0.1.28"
+
+keylimiter = "^0.1.5"
+slowapi = "^0.1.9"
+python-multipart = "^0.0.5"
+
+numpy = "^1.26.4"
+tensorflow = "^2.16.1"
+tf-keras = "^2.16.0"
+polars = "^0.20.16"
+polars-distance = "^0.4.2"
+pot = "^0.9.3"
+transformers = "^4.39.1"
+fuzzywuzzy = "^0.18.0"
+python-levenshtein = "^0.25.0"
+
+datasets = "^1.14.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pyright]
+strict = ["src"]
+# reportUnusedVariable = "warning"

@@ -7,7 +7,7 @@ from prediction.miner.data.binance import get_candlestick_data
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 class Prediction:
-    def __init__(self, base_currency, quote_currency, time_interval):
+    def __init__(self, base_currency, quote_currency, time_interval, timestamp):
         self.base_currency = base_currency
         self.quote_currency = quote_currency
         self.time_interval = time_interval
@@ -51,7 +51,7 @@ class Prediction:
     def moving_average(self, data, window_size):
         return pd.Series(data).rolling(window=window_size).mean().iloc[-1]
     
-    def predict(self, window_size=10, steps=8):
+    def predict(self, window_size=10):
         if self.model is None:
             self.load_model()
             
@@ -67,19 +67,14 @@ class Prediction:
             print("Insufficient data for making predictions.")
             return None
         
-        if not prep_data or len(prep_data[0]) < 50:  # Check if there's enough data
+        if not prep_data or len(prep_data[0]) < 50:
             print("Insufficient data for making predictions.")
             return None
         
         scaled_data = self.scale_data(prep_data)
         scaled_data = np.expand_dims(scaled_data, axis=0)
 
-        predictions = []
-        data = close_prices.copy()
+        next_pred = self.moving_average(close_prices[-window_size:], window_size)
         
-        for _ in range(steps):
-            next_pred = self.moving_average(data, window_size)
-            predictions.append(next_pred)
-            data.append(next_pred)  # Append the predicted value for the next iteration
+        return next_pred
 
-        return predictions
