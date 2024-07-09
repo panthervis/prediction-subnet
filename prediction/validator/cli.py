@@ -20,12 +20,13 @@ def serve(
 ):
     keypair = classic_load_key(commune_key)
     settings = ValidatorSettings()
-    c_client = CommuneClient(get_node_url())
-    subnet_uid = get_subnet_netuid(c_client, "prediction")
+    client = CommuneClient(get_node_url())
+    subnet_uid = get_subnet_netuid(client, "prediction")
+    print(f"sunet_uid: {subnet_uid}")
     validator = Validation(
         keypair,
         subnet_uid,
-        c_client,
+        client,
         call_timeout=call_timeout,
     )
     validator.validation_loop(settings)

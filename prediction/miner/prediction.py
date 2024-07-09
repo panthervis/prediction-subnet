@@ -10,14 +10,14 @@ class Prediction:
     def __init__(self, base_currency, quote_currency, time_interval, timestamp):
         self.base_currency = base_currency
         self.quote_currency = quote_currency
-        self.time_interval = time_interval
+        self.timestamp = timestamp
         self.model = None
         self.tokenizer = None
         self.scaler = None
         self.model_dir = 'models'
     
     def fetch_data(self):
-        candlestick_data = get_candlestick_data(self.base_currency, self.quote_currency, self.time_interval)
+        candlestick_data = get_candlestick_data(self.base_currency, self.quote_currency, time_interval=60)
         return candlestick_data
     
     def extract_close_prices(self, data):

@@ -14,7 +14,7 @@ class Miner(Module):
         generate: Generates a response to a given prompt using a specified model.
     """
     @endpoint
-    def generate(self, category: str, type: str, timestamp: str):
+    def generate(self, category: str, pair: str, timestamp: int):
         """
         Generates a response to a given prompt using a specified model.
 
@@ -28,7 +28,7 @@ class Miner(Module):
         predictions = []
         match category:
             case "crypto":
-                if (type == "BTCUSDT"):
+                if (pair == "BTCUSDT"):
                     base_currency = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
                     quote_currency = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
                     p = Prediction(base_currency, quote_currency, timestamp)
@@ -45,4 +45,4 @@ class Miner(Module):
                 pass
                 
                 
-        print(f"Answering prediction for {category} category & {type} type: {predictions}")
+        print(f"Answering prediction for {category} category & {pair} pair: {predictions}")

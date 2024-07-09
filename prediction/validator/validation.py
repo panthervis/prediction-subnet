@@ -26,6 +26,7 @@ from functools import partial
 import numpy as np
 import requests
 from datetime import datetime
+from collections import defaultdict
 
 from communex.client import CommuneClient
 from communex.module.client import ModuleClient
@@ -183,7 +184,6 @@ class Validation(Module):
         netuid: int,
         client: CommuneClient,
         call_timeout: int = 60,
-        pending_validations = {} 
     ) -> None:
         super().__init__()
         self.client = client
@@ -191,11 +191,11 @@ class Validation(Module):
         self.netuid = netuid
         self.val_model = "foo"
         self.call_timeout = call_timeout,
-        self.pending_validations = pending_validations
+        self.pending_validations = defaultdict(dict)  
 
-    def schedule_tasks(self, category, type):
+    def schedule_tasks(self, category, pair):
         """Schedules validation tasks to run every 8 hours."""
-        asyncio.create_task(self.validation_loop(category, type))
+        asyncio.create_task(self.validation_loop(category, pair))
         
     def get_addresses(self, client: CommuneClient, netuid: int) -> dict[int, str]:
         """
@@ -216,7 +216,7 @@ class Validation(Module):
     def _get_miner_prediction(
         self,
         category: str,
-        type: str,
+        pair: str,
         timestamp: str,
         miner_info: tuple[list[str], Ss58Address],
     ) -> str | None:
@@ -239,7 +239,7 @@ class Validation(Module):
                 client.call(
                     "generate",
                     miner_key,
-                    {"category": category, "type": type, "timestamp": timestamp},
+                    {"category": category, "pair": pair, "timestamp": timestamp},
                     timeout=self.call_timeout,
                 )
             )
@@ -269,11 +269,11 @@ class Validation(Module):
 
         return abs(real_answer - miner_answer)
 
-    def fetch_real_data(self, category, type, unix_timestamp):
+    def fetch_real_data(self, category, pair, unix_timestamp):
         url = 'https://api.binance.com/api/v3/klines'
 
         # Define the symbol and interval
-        symbol = type
+        symbol = pair
         interval = '1m'  # 1 minute interval
 
         # Convert the UNIX timestamp to a datetime object
@@ -319,7 +319,7 @@ class Validation(Module):
     #         self.pending_validations[timestamp] = {}
     #     self.pending_validations[timestamp][miner_id] = prediction
 
-    def get_miner_prompt(self) -> str:
+    def get_miner_prompt(self):
         """
         Generate a prompt for the miner modules.
 
@@ -329,17 +329,52 @@ class Validation(Module):
 
         # filename = 'predictionList.json'
         # categories = self.load_categories(filename)
-        # category, type = self.random_category_selection(categories)
+        # category, pair = self.random_category_selection(categories)
         category = "crypto"
-        type = "BTCUSDT"
+        pair = "BTCUSDT"
         timestamp = get_random_future_timestamp()
-        
-        return {"category": category, "type": type, "timestamp": timestamp}
+        print(f"timestamp from function: {timestamp}")
+        print(f"Debug - Category: {category}, Type: {pair}, Timestamp: {timestamp}")
+        return {"category": category, "pair": pair, "timestamp": timestamp}
 
     def sigmoid(x):
         """Apply the sigmoid function to x."""
         return 1 / (1 + np.exp(-x))
     
+    def store_prediction(self, timestamp, miner_id, prediction):
+        self.pending_validations[timestamp][miner_id] = {'prediction': prediction}
+        
+    async def delayed_validation(self, timestamp):
+        base_score_dict: dict[int, float] = {}
+        
+        time_to_wait = (datetime.fromtimestamp(float(timestamp)) - datetime.now()).total_seconds()
+        if time_to_wait > 0:
+            await asyncio.sleep(time_to_wait)
+        else:
+            return "Error occured for time to wait"
+        
+        real_data = await self.fetch_real_data(timestamp)
+        
+        predictions = self.pending_validations.pop(timestamp, None)
+        if predictions:
+            for miner_id, miner_data in predictions.items():
+                if not miner_data:
+                    log(f"Skipping miner {miner_id} that didn't answer")
+                    continue
+
+                base_score = self._base_score_miner(miner_data, real_data)
+                base_score_dict[miner_id] = base_score
+            
+            if not base_score_dict:
+                log("No miner managed to give a valid answer")
+                return None
+
+            min_score = min(base_score_dict.values())
+            max_score = max(base_score_dict.values())
+            score_dict = {uid: self.sigmoid((score - min_score) / (max_score - min_score)) for uid, score in base_score_dict.items()}
+            
+            return score_dict
+                
     async def validate_step(
         self, netuid: int, settings: ValidatorSettings
     ) -> None:
@@ -355,6 +390,7 @@ class Validation(Module):
 
         # retrive the miner information
         modules_adresses = self.get_addresses(self.client, netuid)
+        print(f"modules: {modules_adresses}")
         modules_keys = self.client.query_map_key(netuid)
         val_ss58 = self.key.ss58_address
         if val_ss58 not in modules_keys.values():
@@ -371,47 +407,28 @@ class Validation(Module):
 
         base_score_dict: dict[int, float] = {}
 
-        miner_prompt = self.get_miner_prompt()
-        future_timestamp = miner_prompt['timestamp']
+        category, pair, future_timestamp  = self.get_miner_prompt().values()
+        print(f"category: {category}, pair: {pair}, future_timestamp: {future_timestamp}")
         
-        predictions = await asyncio.gather(
-            *(self._get_miner_prediction(info, miner_prompt) for info in modules_info.values()),
-            return_exceptions=True
-        )
+        tasks = [self._get_miner_prediction(category, pair, future_timestamp, info) for info in modules_info.values()]
+        tasks = [task for task in tasks if task is not None]
+        predictions = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for miner_id, prediction in predictions.items():
+            self.store_prediction(future_timestamp, miner_id, prediction)
+        # predictions = await asyncio.gather(
+        #     *(self._get_miner_prediction(category, pair, future_timestamp, info) for info in modules_info.values()),
+        #     return_exceptions=True
+        # )
         
         log(f"Selected the following miners: {modules_info.keys()}")
-
-        time_to_wait = (datetime.fromtimestamp(future_timestamp) - datetime.now()).total_seconds()
         
-        if time_to_wait > 0:
-            await asyncio.sleep(time_to_wait)
-        else:
-            return "Error occured for time to wait"
-        
-        real_data = await self.fetch_real_data()
-        
-        for uid, miner_response in zip(modules_info.keys(), predictions):
-            miner_answer = miner_response
-            if not miner_answer:
-                log(f"Skipping miner {uid} that didn't answer")
-                continue
+        scores = asyncio.create_task(self.delayed_validation(future_timestamp))
 
-            base_score = self._base_score_miner(miner_answer, real_data)
-            time.sleep(0.5)
-            base_score_dict[uid] = base_score
-
-        if not base_score_dict:
-            log("No miner managed to give a valid answer")
-            return None
-
-        min_score = min(base_score_dict.values())
-        max_score = max(base_score_dict.values())
-        score_dict = {uid: self.sigmoid((score - min_score) / (max_score - min_score)) for uid, score in base_score_dict.items()}
-        
         # combining with original score
         all_modules = get_map_modules(self.client, self.netuid)
         # the blockchain call to set the weights
-        _ = set_weights(settings, score_dict, self.netuid, self.client, self.key)
+        _ = set_weights(settings, scores, self.netuid, self.client, self.key)
     
     def validation_loop(self, settings: ValidatorSettings) -> None:
         """

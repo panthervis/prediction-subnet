@@ -22,13 +22,13 @@ async def main():
     netuid = 1234
     validation = Validation(key, netuid, client)
     
-    # get prediction category and type
+    # get prediction category and pair
     # filename = 'predictionList.json'
     # categories = load_categories(filename)
-    # category, type = random_category_selection(categories)
+    # category, pair = random_category_selection(categories)
     category = "crypto"
-    type = "BTCUSDT"
-    validation.schedule_tasks(category, type)
+    pair = "BTCUSDT"
+    validation.schedule_tasks(category, pair)
 
 if __name__ == '__main__':
     asyncio.run(main())
