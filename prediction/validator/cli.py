@@ -7,6 +7,7 @@ from communex.compat.key import classic_load_key
 
 from prediction.validator._config import ValidatorSettings
 from prediction.validator.validation import get_subnet_netuid, Validation
+import asyncio
 
 app = typer.Typer()
 
@@ -29,7 +30,9 @@ def serve(
         client,
         call_timeout=call_timeout,
     )
-    validator.validation_loop(settings)
+    # validator.validation_loop(settings)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(validator.validation_loop(settings))
 
 
 if __name__ == "__main__":

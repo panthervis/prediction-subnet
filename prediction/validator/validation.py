@@ -213,7 +213,7 @@ class Validation(Module):
         module_addreses = client.query_map_address(netuid)
         return module_addreses
 
-    def _get_miner_prediction(
+    async def _get_miner_prediction(
         self,
         category: str,
         pair: str,
@@ -235,14 +235,12 @@ class Validation(Module):
         client = ModuleClient(module_ip, int(module_port), self.key)
         try:
             # handles the communication with the miner
-            miner_answer = asyncio.run(
-                client.call(
+            miner_answer = await client.call(
                     "generate",
                     miner_key,
                     {"category": category, "pair": pair, "timestamp": timestamp},
                     timeout=self.call_timeout,
                 )
-            )
             miner_answer = miner_answer["answer"]
 
         except Exception as e:
@@ -297,7 +295,7 @@ class Validation(Module):
 
         # Make the HTTP request
         response = requests.get(url, params=params)
-
+        print("resonse came alredy======")
         # Check if the request was successful
         if response.status_code == 200:
             data = response.json()
@@ -306,6 +304,8 @@ class Validation(Module):
                 candle = data[0]
                 open_time = datetime.utcfromtimestamp(candle[0] / 1000).strftime('%Y-%m-%d %H:%M:%S')
                 close_price = candle[4]
+                
+                print(f"close_price:----{close_price}")
                 return {'time': open_time, 'close_price': close_price}
             else:
                 print("No data available for the given timestamp.")
@@ -333,8 +333,7 @@ class Validation(Module):
         category = "crypto"
         pair = "BTCUSDT"
         timestamp = get_random_future_timestamp()
-        print(f"timestamp from function: {timestamp}")
-        print(f"Debug - Category: {category}, Type: {pair}, Timestamp: {timestamp}")
+
         return {"category": category, "pair": pair, "timestamp": timestamp}
 
     def sigmoid(x):
@@ -344,7 +343,7 @@ class Validation(Module):
     def store_prediction(self, timestamp, miner_id, prediction):
         self.pending_validations[timestamp][miner_id] = {'prediction': prediction}
         
-    async def delayed_validation(self, timestamp):
+    async def delayed_validation(self, category, pair, timestamp):
         base_score_dict: dict[int, float] = {}
         
         time_to_wait = (datetime.fromtimestamp(float(timestamp)) - datetime.now()).total_seconds()
@@ -353,7 +352,7 @@ class Validation(Module):
         else:
             return "Error occured for time to wait"
         
-        real_data = await self.fetch_real_data(timestamp)
+        real_data = await self.fetch_real_data(category, pair, timestamp)
         
         predictions = self.pending_validations.pop(timestamp, None)
         if predictions:
@@ -414,7 +413,7 @@ class Validation(Module):
         tasks = [task for task in tasks if task is not None]
         predictions = await asyncio.gather(*tasks, return_exceptions=True)
         
-        for miner_id, prediction in predictions.items():
+        for miner_id, prediction in enumerate(predictions):
             self.store_prediction(future_timestamp, miner_id, prediction)
         # predictions = await asyncio.gather(
         #     *(self._get_miner_prediction(category, pair, future_timestamp, info) for info in modules_info.values()),
@@ -423,14 +422,14 @@ class Validation(Module):
         
         log(f"Selected the following miners: {modules_info.keys()}")
         
-        scores = asyncio.create_task(self.delayed_validation(future_timestamp))
+        scores = await self.delayed_validation(category, pair, future_timestamp)
 
         # combining with original score
         all_modules = get_map_modules(self.client, self.netuid)
         # the blockchain call to set the weights
         _ = set_weights(settings, scores, self.netuid, self.client, self.key)
     
-    def validation_loop(self, settings: ValidatorSettings) -> None:
+    async def validation_loop(self, settings: ValidatorSettings) -> None:
         """
         Run the validation loop continuously based on the provided settings.
 
@@ -440,8 +439,9 @@ class Validation(Module):
 
         while True:
             start_time = time.time()
-            _ = asyncio.run(self.validate_step(self.netuid, settings))
-
+            # _ = asyncio.run(self.validate_step(self.netuid, settings))
+            await self.validate_step(self.netuid, settings)
+            print("sent_prediction_request-----------")
             elapsed = time.time() - start_time
             if elapsed < settings.iteration_interval:
                 sleep_time = settings.iteration_interval - elapsed
