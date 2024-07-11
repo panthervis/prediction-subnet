@@ -17,7 +17,7 @@ def serve(
     commune_key: Annotated[
         str, typer.Argument(help="Name of the key present in `~/.commune/key`")
     ],
-    call_timeout: int = 65,
+    call_timeout: int = 60,
 ):
     keypair = classic_load_key(commune_key)
     settings = ValidatorSettings()

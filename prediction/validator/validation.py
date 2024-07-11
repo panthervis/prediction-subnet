@@ -190,7 +190,7 @@ class Validation(Module):
         self.key = key
         self.netuid = netuid
         self.val_model = "foo"
-        self.call_timeout = call_timeout,
+        self.call_timeout = call_timeout
         self.pending_validations = defaultdict(dict)  
 
     def schedule_tasks(self, category, pair):
@@ -219,7 +219,7 @@ class Validation(Module):
         pair: str,
         timestamp: str,
         miner_info: tuple[list[str], Ss58Address],
-    ) -> str | None:
+    ) -> tuple[str, str | None]:
         """
         Prompt a miner module to generate an answer to the given question.
 
@@ -233,6 +233,7 @@ class Validation(Module):
         connection, miner_key = miner_info
         module_ip, module_port = connection
         client = ModuleClient(module_ip, int(module_port), self.key)
+
         try:
             # handles the communication with the miner
             miner_answer = await client.call(
@@ -247,7 +248,7 @@ class Validation(Module):
             log(f"Miner {module_ip}:{module_port} failed to generate an answer")
             print(e)
             miner_answer = None
-        return miner_answer
+        return miner_key, miner_answer
 
     def _base_score_miner(self, miner_answer: str | None, real_answer: str) -> float:
         """
@@ -262,17 +263,17 @@ class Validation(Module):
         # get real data from Binance
         
         # Implement your custom scoring logic here
-        if not miner_answer:
-            return 1000000
+        # Implement your custom scoring logic here
+        if not miner_answer or (isinstance(miner_answer, dict) and 'prediction' not in miner_answer) or not isinstance(miner_answer, (int, float)):
+            return 10000000000
+        return abs(float(real_answer) - miner_answer)
 
-        return abs(real_answer - miner_answer)
-
-    def fetch_real_data(self, category, pair, unix_timestamp):
-        url = 'https://api.binance.com/api/v3/klines'
+    async def fetch_real_data(self, category, pair, unix_timestamp):
+        # url = 'https://api.binance.com/api/v3/klines'
+        url = 'https://api.kraken.com/0/public/OHLC'
 
         # Define the symbol and interval
-        symbol = pair
-        interval = '1m'  # 1 minute interval
+        interval = '1'  # 1 minute interval
 
         # Convert the UNIX timestamp to a datetime object
         target_time = datetime.utcfromtimestamp(unix_timestamp)
@@ -280,44 +281,64 @@ class Validation(Module):
         # Round down to the nearest minute
         target_time = target_time.replace(second=0, microsecond=0)
 
-        # Calculate start and end times in milliseconds for the API call
-        start_time_ms = int(target_time.timestamp() * 1000)
-        end_time_ms = start_time_ms + 60000  # 60000 milliseconds = 1 minute
+        # # For binance
+        # start_time_ms = int(target_time.timestamp() * 1000)
+        # end_time_ms = start_time_ms + 60000  # 60000 milliseconds = 1 minute
 
-        # Prepare parameters for the API request
+        # # Prepare parameters for the API request
+        # params = {
+        #     'symbol': symbol,
+        #     'interval': interval,
+        #     'startTime': start_time_ms,
+        #     'endTime': end_time_ms,
+        #     'limit': 1  # We want exactly 1 data point
+        # }
+        
+        # For kraken
+        since_timestamp = int(target_time.timestamp()) * 1000  # Kraken uses milliseconds
+
         params = {
-            'symbol': symbol,
+            'pair': pair,
             'interval': interval,
-            'startTime': start_time_ms,
-            'endTime': end_time_ms,
-            'limit': 1  # We want exactly 1 data point
+            'since': since_timestamp  # Fetch data since this timestamp
         }
 
         # Make the HTTP request
         response = requests.get(url, params=params)
-        print("resonse came alredy======")
+        
         # Check if the request was successful
         if response.status_code == 200:
             data = response.json()
-            # Each data point includes [Open time, Open, High, Low, Close, Volume, Close time, ...]
-            if data:
-                candle = data[0]
-                open_time = datetime.utcfromtimestamp(candle[0] / 1000).strftime('%Y-%m-%d %H:%M:%S')
-                close_price = candle[4]
+            
+            if data.get('error'):
+                print("Error in API response:", data['error'])
+                return None
+            
+            # # Each data point includes [Open time, Open, High, Low, Close, Volume, Close time, ...]
+            # if data:
+            #     candle = data[0]
+            #     open_time = datetime.utcfromtimestamp(candle[0] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+            #     close_price = candle[4]
                 
-                print(f"close_price:----{close_price}")
-                return {'time': open_time, 'close_price': close_price}
+            #     print(f"close_price:----{close_price}")
+            #     return {'time': open_time, 'close_price': close_price}
+            # else:
+            #     print("No data available for the given timestamp.")
+            #     return None
+            
+            if data['result']:
+                pair_key = list(data['result'].keys())[0]
+                last_data_point = data['result'][pair_key][-1]
+                open_time = datetime.utcfromtimestamp(last_data_point[0]).strftime('%Y-%m-%d %H:%M:%S')
+                close_price = last_data_point[4]
+                
+                return close_price
             else:
-                print("No data available for the given timestamp.")
+                print("No data available.")
                 return None
         else:
             print("Failed to fetch data:", response.status_code)
             return None
-    
-    # def store_response(self, miner_id, prediction, timestamp):
-    #     if timestamp not in self.pending_validations:
-    #         self.pending_validations[timestamp] = {}
-    #     self.pending_validations[timestamp][miner_id] = prediction
 
     def get_miner_prompt(self):
         """
@@ -341,26 +362,25 @@ class Validation(Module):
         return 1 / (1 + np.exp(-x))
     
     def store_prediction(self, timestamp, miner_id, prediction):
-        self.pending_validations[timestamp][miner_id] = {'prediction': prediction}
+        self.pending_validations[timestamp][miner_id] = prediction
         
     async def delayed_validation(self, category, pair, timestamp):
         base_score_dict: dict[int, float] = {}
         
-        time_to_wait = (datetime.fromtimestamp(float(timestamp)) - datetime.now()).total_seconds()
-        if time_to_wait > 0:
-            await asyncio.sleep(time_to_wait)
-        else:
-            return "Error occured for time to wait"
-        
+        while True:
+            time_to_wait = (datetime.fromtimestamp(float(timestamp)) - datetime.now()).total_seconds()
+            if time_to_wait > 0:
+                await asyncio.sleep(time_to_wait)
+                break
+            else:
+                print("Waiting for time_to_wait to be greater than zero")
+                
         real_data = await self.fetch_real_data(category, pair, timestamp)
         
         predictions = self.pending_validations.pop(timestamp, None)
+        print(f"poped_predictions: {predictions}")
         if predictions:
             for miner_id, miner_data in predictions.items():
-                if not miner_data:
-                    log(f"Skipping miner {miner_id} that didn't answer")
-                    continue
-
                 base_score = self._base_score_miner(miner_data, real_data)
                 base_score_dict[miner_id] = base_score
             
@@ -411,10 +431,14 @@ class Validation(Module):
         
         tasks = [self._get_miner_prediction(category, pair, future_timestamp, info) for info in modules_info.values()]
         tasks = [task for task in tasks if task is not None]
+        
+        print(f"tasks: {tasks}")
         predictions = await asyncio.gather(*tasks, return_exceptions=True)
         
-        for miner_id, prediction in enumerate(predictions):
+        print(f"predictions: {predictions}")
+        for miner_id, prediction in predictions:
             self.store_prediction(future_timestamp, miner_id, prediction)
+        print(f"stored prediction: {self.pending_validations}")
         # predictions = await asyncio.gather(
         #     *(self._get_miner_prediction(category, pair, future_timestamp, info) for info in modules_info.values()),
         #     return_exceptions=True
@@ -423,7 +447,7 @@ class Validation(Module):
         log(f"Selected the following miners: {modules_info.keys()}")
         
         scores = await self.delayed_validation(category, pair, future_timestamp)
-
+        print("after delayed validation")
         # combining with original score
         all_modules = get_map_modules(self.client, self.netuid)
         # the blockchain call to set the weights

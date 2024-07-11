@@ -32,7 +32,7 @@ class Miner(Module):
                     base_currency = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
                     quote_currency = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
                     p = Prediction(base_currency, quote_currency, timestamp)
-                    predictions = p.predict()
+                    prediction = p.predict()
             case "forex":
                 pass
             case "gambling":
@@ -45,4 +45,6 @@ class Miner(Module):
                 pass
                 
                 
-        print(f"Answering prediction for {category} category & {pair} pair: {predictions}")
+        print(f"Answering prediction for {category} category & {pair} pair: {prediction}")
+
+        return prediction
