@@ -86,6 +86,10 @@ def set_weights(
     uids = list(weighted_scores.keys())
     weights = list(weighted_scores.values())
     # send the blockchain call
+    print(f"uids=============: {uids}")
+    print(f"weights=============: {weights}")
+    # uids = [1]
+    # weights = [5]
     client.vote(key=key, uids=uids, weights=weights, netuid=netuid)
 
 
@@ -218,6 +222,7 @@ class Validation(Module):
         category: str,
         pair: str,
         timestamp: str,
+        miner_id: int, 
         miner_info: tuple[list[str], Ss58Address],
     ) -> tuple[str, str | None]:
         """
@@ -230,6 +235,7 @@ class Validation(Module):
         Returns:
             The generated answer from the miner module, or None if the miner fails to generate an answer.
         """
+        print(f"miner_info:----{miner_info}")
         connection, miner_key = miner_info
         module_ip, module_port = connection
         client = ModuleClient(module_ip, int(module_port), self.key)
@@ -248,7 +254,7 @@ class Validation(Module):
             log(f"Miner {module_ip}:{module_port} failed to generate an answer")
             print(e)
             miner_answer = None
-        return miner_key, miner_answer
+        return miner_id, miner_key, miner_answer
 
     def _base_score_miner(self, miner_answer: str | None, real_answer: str) -> float:
         """
@@ -357,7 +363,7 @@ class Validation(Module):
 
         return {"category": category, "pair": pair, "timestamp": timestamp}
 
-    def sigmoid(x):
+    def sigmoid(self, x):
         """Apply the sigmoid function to x."""
         return 1 / (1 + np.exp(-x))
     
@@ -429,20 +435,16 @@ class Validation(Module):
         category, pair, future_timestamp  = self.get_miner_prompt().values()
         print(f"category: {category}, pair: {pair}, future_timestamp: {future_timestamp}")
         
-        tasks = [self._get_miner_prediction(category, pair, future_timestamp, info) for info in modules_info.values()]
+        tasks = [self._get_miner_prediction(category, pair, future_timestamp, id, info) for id, info in modules_info.items()]
         tasks = [task for task in tasks if task is not None]
         
         print(f"tasks: {tasks}")
         predictions = await asyncio.gather(*tasks, return_exceptions=True)
         
         print(f"predictions: {predictions}")
-        for miner_id, prediction in predictions:
+        for miner_id, miner_key, prediction in predictions:
             self.store_prediction(future_timestamp, miner_id, prediction)
         print(f"stored prediction: {self.pending_validations}")
-        # predictions = await asyncio.gather(
-        #     *(self._get_miner_prediction(category, pair, future_timestamp, info) for info in modules_info.values()),
-        #     return_exceptions=True
-        # )
         
         log(f"Selected the following miners: {modules_info.keys()}")
         
