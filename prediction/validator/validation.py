@@ -396,7 +396,11 @@ class Validation(Module):
 
             min_score = min(base_score_dict.values())
             max_score = max(base_score_dict.values())
-            score_dict = {uid: self.sigmoid((score - min_score) / (max_score - min_score)) for uid, score in base_score_dict.items()}
+            
+            if min_score == max_score:
+                score_dict = {uid: 0.5 for uid in base_score_dict.keys()}
+            else:
+                score_dict = {uid: self.sigmoid((score - min_score) / (max_score - min_score)) for uid, score in base_score_dict.items()}
             
             return score_dict
                 
@@ -424,14 +428,17 @@ class Validation(Module):
         modules_info: dict[int, tuple[list[str], Ss58Address]] = {}
 
         modules_filtered_address = get_ip_port(modules_adresses)
+        print(f"modules_filtered_address: {modules_filtered_address}")
+        
         for module_id in modules_keys.keys():
             module_addr = modules_filtered_address.get(module_id, None)
             if not module_addr:
                 continue
             modules_info[module_id] = (module_addr, modules_keys[module_id])
 
-        base_score_dict: dict[int, float] = {}
-
+        key_string = str(self.key)  # Convert object to string
+        key_address = key_string.split('=')[1].strip(')>')
+        modules_info = {k: v for k, v in modules_info.items() if v[1] != key_address}
         category, pair, future_timestamp  = self.get_miner_prompt().values()
         print(f"category: {category}, pair: {pair}, future_timestamp: {future_timestamp}")
         
@@ -445,13 +452,13 @@ class Validation(Module):
         for miner_id, miner_key, prediction in predictions:
             self.store_prediction(future_timestamp, miner_id, prediction)
         print(f"stored prediction: {self.pending_validations}")
-        
-        log(f"Selected the following miners: {modules_info.keys()}")
-        
+                
         scores = await self.delayed_validation(category, pair, future_timestamp)
         print("after delayed validation")
+        # exclude self in scores
+        
         # combining with original score
-        all_modules = get_map_modules(self.client, self.netuid)
+        # all_modules = get_map_modules(self.client, self.netuid)
         # the blockchain call to set the weights
         _ = set_weights(settings, scores, self.netuid, self.client, self.key)
     

@@ -1,6 +1,6 @@
 # Prediction Subnet
 
-The Prediction Subnet is an advanced time-series prediction platform designed to support a wide range of domains including cryptocurrency, foreign exchange (forex), gambling, betting, and weather predictions. This platform leverages a competitive model where miners (prediction models) compete to provide the most accurate predictions, earning incentives based on their performance.
+The Prediction Subnet is an advanced time-series prediction platform designed to support a wide range of domains including cryptocurrency, foreign exchange (forex), gambling, betting, weather predictions and more. This platform leverages a competitive model where miners (prediction models) compete to provide the most accurate predictions, earning incentives based on their performance.
 
 
 ## Overview
@@ -33,14 +33,14 @@ pip install -r requirements.txt
 ### Validator Setup
 Run the validator script to start validating predictions. Replace <name-of-your-com-key> with your actual key.
 ```sh
-python3 -m validator/cli.py <name-of-your-com-key>
+python3 -m prediction.validator.cli <name-of-your-com-key>
 ```
 
 ### Miner Setup
 Start your miner by running the miner application. Ensure your key is correctly configured.
 
 ```sh
-python3 -m validator/cli.py <name-of-your-com-key>
+python3 -m prediction.validator.cli <name-of-your-com-key>
 ```
 
 ## License
