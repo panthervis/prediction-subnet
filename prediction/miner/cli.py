@@ -28,7 +28,7 @@ def serve(
     module = Miner()
         
     server = ModuleServer(
-        module, keypair, subnets_whitelist=[11]
+        module, keypair, subnets_whitelist=[9]
     )
     
     miner_app = server.get_fastapi_app()
