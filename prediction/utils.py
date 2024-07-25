@@ -53,9 +53,9 @@ def dateToTimestamp(date_string):
 
     return date_object.timestamp()
 
-def get_random_future_timestamp(hours_ahead=0.1):
+def get_random_future_timestamp(hours_ahead=8):
     now = datetime.now()
-    random_seconds = random.randint(0, hours_ahead * 3600)
+    random_seconds = random.randint(60, hours_ahead * 3600)
     random_future_timestamp = now + timedelta(seconds=random_seconds)
     timestamp = random_future_timestamp.timestamp()
     timestamp = int(round(timestamp))
