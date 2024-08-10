@@ -3,7 +3,11 @@ import datetime
 import csv
 from datetime import datetime, timedelta, timezone
 import random
-import math
+import subprocess
+import os
+import codecs
+import re
+import prediction
 
 def iso_timestamp_now() -> str:
     now = datetime.now(tz=timezone.utc)
@@ -61,3 +65,29 @@ def get_random_future_timestamp(hours_ahead=8):
     timestamp = int(round(timestamp))
     
     return timestamp
+
+def update_repository():
+    print("checking repository updates")
+    try:
+        subprocess.run(["git", "pull"], check=True)
+    except subprocess.CalledProcessError:
+        print("Git pull failed")
+        return False
+
+    here = os.path.abspath(os.path.dirname(__file__))
+    parent_dir = os.path.dirname(here) 
+    init_file_path = os.path.join(parent_dir, 'prediction/__init__.py')
+    
+    with codecs.open(init_file_path, encoding='utf-8') as init_file:
+        version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", init_file.read(), re.M)
+        if version_match:
+            new_version = version_match.group(1)
+            print(f"current version: {prediction.__version__}, new version: {new_version}")
+            if prediction.__version__ != new_version:
+                try:
+                    subprocess.run(["python3", "-m", "pip", "install", "-e", "."], check=True)
+                    os._exit(1)
+                except subprocess.CalledProcessError:
+                    print("Pip install failed")
+        else:
+            print("No changes detected!")

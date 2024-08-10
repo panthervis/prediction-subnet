@@ -2,7 +2,6 @@ from pydantic_settings import BaseSettings
 
 
 class ValidatorSettings(BaseSettings):
-    # == Scoring ==
-    iteration_interval: int = 60  # Set, accordingly to your tempo.
-    max_allowed_weights: int = 800  # Query dynamically based on your subnet settings.
-    foo: int | None = None  # Anything else that you wish to implement.
+    iteration_interval: int = 300  # Send requests to miners for every iteration interval in seconds
+    max_allowed_weights: int = 800  # Best score for miner
+    weighting_period: int = 2400 # 300 blocks that sets weights for miners - 40 minutes

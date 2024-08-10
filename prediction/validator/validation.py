@@ -18,7 +18,7 @@ Functions:
 Constants:
     IP_REGEX: A regular expression pattern for matching IP addresses.
 """
-
+import sqlite3
 import asyncio
 import re
 import time
@@ -36,7 +36,7 @@ from communex.misc import get_map_modules
 from substrateinterface import Keypair
 
 from prediction.validator._config import ValidatorSettings
-from prediction.utils import dateToTimestamp, get_random_future_timestamp, log
+from prediction.utils import get_random_future_timestamp, log, update_repository
 
 IP_REGEX = re.compile(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+")
 
@@ -91,7 +91,6 @@ def set_weights(
     # uids = [1]
     # weights = [5]
     client.vote(key=key, uids=uids, weights=weights, netuid=netuid)
-
 
 def cut_to_max_allowed_weights(
     score_dict: dict[int, float], max_allowed_weights: int
@@ -196,6 +195,25 @@ class Validation(Module):
         self.val_model = "foo"
         self.call_timeout = call_timeout
         self.pending_validations = defaultdict(dict)  
+        self.initialize_database()
+
+    def initialize_database(self):
+        self.conn = sqlite3.connect('predictions.db')
+        c = self.conn.cursor()
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS predictions
+                     (timestamp, miner_key, prediction REAL, category, pair)''')
+    
+    def insert_prediction(self, timestamp, miner_key, prediction, category, pair):
+        c = self.conn.cursor()
+        print(f"prediction: {prediction}")
+        if prediction is None or prediction == 'None' or prediction == "":
+            print("here------------")
+            prediction = -1
+            
+        c.execute("INSERT INTO predictions VALUES (?,?,?,?,?)", (timestamp, miner_key, prediction, category, pair))
+
+        self.conn.commit()
 
     def schedule_tasks(self, category, pair):
         """Schedules validation tasks to run every 8 hours."""
@@ -235,7 +253,6 @@ class Validation(Module):
         Returns:
             The generated answer from the miner module, or None if the miner fails to generate an answer.
         """
-        print(f"miner_info:----{miner_info}")
         connection, miner_key = miner_info
         module_ip, module_port = connection
         client = ModuleClient(module_ip, int(module_port), self.key)
@@ -254,6 +271,7 @@ class Validation(Module):
             log(f"Miner {module_ip}:{module_port} failed to generate an answer")
             print(e)
             miner_answer = None
+        
         return miner_id, miner_key, miner_answer
 
     def _base_score_miner(self, miner_answer: str | None, real_answer: str) -> float:
@@ -266,10 +284,6 @@ class Validation(Module):
         Returns:
             The score assigned to the miner's answer.
         """
-        # get real data from Binance
-        
-        # Implement your custom scoring logic here
-        # Implement your custom scoring logic here
         if not miner_answer or (isinstance(miner_answer, dict) and 'prediction' not in miner_answer) or not isinstance(miner_answer, (int, float)):
             return 10000000000
         return abs(float(real_answer) - miner_answer)
@@ -367,8 +381,8 @@ class Validation(Module):
         """Apply the sigmoid function to x."""
         return 1 / (1 + np.exp(-x))
     
-    def store_prediction(self, timestamp, miner_id, prediction):
-        self.pending_validations[timestamp][miner_id] = prediction
+    def store_prediction(self, timestamp, miner_key, prediction):
+        self.pending_validations[timestamp][miner_key] = prediction
         
     async def delayed_validation(self, category, pair, timestamp):
         base_score_dict: dict[int, float] = {}
@@ -386,9 +400,9 @@ class Validation(Module):
         predictions = self.pending_validations.pop(timestamp, None)
         print(f"poped_predictions: {predictions}")
         if predictions:
-            for miner_id, miner_data in predictions.items():
+            for miner_key, miner_data in predictions.items():
                 base_score = self._base_score_miner(miner_data, real_data)
-                base_score_dict[miner_id] = base_score
+                base_score_dict[miner_key] = base_score
             
             if not base_score_dict:
                 log("No miner managed to give a valid answer")
@@ -403,9 +417,9 @@ class Validation(Module):
                 score_dict = {uid: self.sigmoid((score - min_score) / (max_score - min_score)) for uid, score in base_score_dict.items()}
             
             return score_dict
-                
-    async def validate_step(
-        self, netuid: int, settings: ValidatorSettings
+
+    async def send_request(
+        self, netuid: int
     ) -> None:
         """
         Perform a validation step.
@@ -416,10 +430,8 @@ class Validation(Module):
         Args:
             netuid: The network UID of the subnet.
         """
-
         # retrive the miner information
         modules_adresses = self.get_addresses(self.client, netuid)
-        print(f"modules: {modules_adresses}")
         modules_keys = self.client.query_map_key(netuid)
         val_ss58 = self.key.ss58_address
         if val_ss58 not in modules_keys.values():
@@ -428,7 +440,6 @@ class Validation(Module):
         modules_info: dict[int, tuple[list[str], Ss58Address]] = {}
 
         modules_filtered_address = get_ip_port(modules_adresses)
-        print(f"modules_filtered_address: {modules_filtered_address}")
         
         for module_id in modules_keys.keys():
             module_addr = modules_filtered_address.get(module_id, None)
@@ -444,24 +455,106 @@ class Validation(Module):
         
         tasks = [self._get_miner_prediction(category, pair, future_timestamp, id, info) for id, info in modules_info.items()]
         tasks = [task for task in tasks if task is not None]
-        
-        print(f"tasks: {tasks}")
         predictions = await asyncio.gather(*tasks, return_exceptions=True)
         
         print(f"predictions: {predictions}")
-        for miner_id, miner_key, prediction in predictions:
-            self.store_prediction(future_timestamp, miner_id, prediction)
-        print(f"stored prediction: {self.pending_validations}")
-                
-        scores = await self.delayed_validation(category, pair, future_timestamp)
-        print("after delayed validation")
+        
+        # store prediction values in DB
+        for prediction in predictions:
+            if isinstance(prediction, Exception):
+                continue
+            miner_id, miner_key, predicted_value = prediction
+            self.insert_prediction(future_timestamp, miner_key, predicted_value, category, pair)
+
+        # for miner_id, miner_key, prediction in predictions:
+        #     self.store_prediction(future_timestamp, miner_key, prediction)
+        # print(f"stored prediction: {self.pending_validations}")
+
+        # scores = await self.delayed_validation(category, pair, future_timestamp)
+        # validation_task = asyncio.create_task(self.delayed_validation(category, pair, future_timestamp))
         # exclude self in scores
         
         # combining with original score
         # all_modules = get_map_modules(self.client, self.netuid)
         # the blockchain call to set the weights
-        _ = set_weights(settings, scores, self.netuid, self.client, self.key)
+        # _ = set_weights(settings, scores, self.netuid, self.client, self.key)
     
+    async def set_weights(
+        self,
+        settings: ValidatorSettings,
+        netuid: int,
+        client: CommuneClient,
+        key: Keypair,
+    ) -> None:
+        """
+        Set weights for miners based on their scores.
+
+        Args:
+            netuid: The network UID.
+            client: The CommuneX client.
+            key: The keypair for signing transactions.
+        """
+
+        # Create a cursor object
+        c = self.conn.cursor()
+
+        # Get the current time
+        now = time.time()
+
+        # Calculate the start of the weighting period
+        start_time = now - settings.weighting_period
+
+        # Retrieve all predictions made within the weighting period
+        c.execute("SELECT * FROM predictions WHERE timestamp >= ?", (start_time,))
+        predictions = c.fetchall()
+
+        # Group predictions by miner key
+        grouped_predictions = defaultdict(list)
+        for timestamp, category, pair, miner_key, predicted_value in predictions:
+            grouped_predictions[miner_key].append((timestamp, category, pair, predicted_value))
+
+        # Calculate scores for each miner
+        scores = {}
+        for miner_key, miner_predictions in grouped_predictions.items():
+            differences = []
+            for timestamp, category, pair, predicted_value in miner_predictions:
+                # Fetch the real value
+                real_value = self.fetch_real_data(category, pair, timestamp)
+
+                # Calculate the difference
+                if predicted_value is None:
+                    difference = None
+                else:
+                    difference = abs(real_value - predicted_value)
+                
+                differences.append(difference)
+
+            # Calculate the average difference
+            # Calculate the average difference
+            if differences:
+                # Remove None values
+                differences = [d for d in differences if d is not None]
+
+                if differences:
+                    average_difference = sum(differences) / len(differences)
+                    # If there were any None values, replace them with 5 times the average
+                    num_none = len(differences) - len(differences)
+                    if num_none > 0:
+                        average_difference = (average_difference * len(differences) + 5 * average_difference * num_none) / (len(differences) + num_none)
+                else:
+                    # If all values were None, assign a large average difference
+                    average_difference = 1000000
+            else:
+                # If the miner has no predictions, assign a large average difference
+                average_difference = 1000000
+
+            # Apply the sigmoid function to the average difference
+            score = 1 / (1 + math.exp(average_difference))
+
+            # Store the score
+            scores[miner_key] = score
+
+        # ... existing code ...
     async def validation_loop(self, settings: ValidatorSettings) -> None:
         """
         Run the validation loop continuously based on the provided settings.
@@ -469,14 +562,43 @@ class Validation(Module):
         Args:
             settings: The validator settings to use for the validation loop.
         """
+        # Create two tasks that run concurrently
+        task1 = asyncio.create_task(self.send_request_loop(settings))
+        # task2 = asyncio.create_task(self.set_weights_loop(settings))
 
+        # Wait for both tasks to complete
+        # await asyncio.gather(task1, task2)
+        await asyncio.gather(task1)
+
+    async def send_request_loop(self, settings: ValidatorSettings) -> None:
+        """
+        Continuously send requests to miners every interval seconds.
+
+        Args:
+            interval: The interval in seconds between each request.
+        """
         while True:
+            update_repository()
             start_time = time.time()
-            # _ = asyncio.run(self.validate_step(self.netuid, settings))
-            await self.validate_step(self.netuid, settings)
-            print("sent_prediction_request-----------")
+            await self.send_request(self.netuid)
             elapsed = time.time() - start_time
             if elapsed < settings.iteration_interval:
                 sleep_time = settings.iteration_interval - elapsed
                 log(f"Sleeping for {sleep_time}")
-                time.sleep(sleep_time)
+                await asyncio.sleep(sleep_time)
+
+    async def set_weights_loop(self, settings: ValidatorSettings) -> None:
+        """
+        Continuously set weights for miners every interval seconds.
+
+        Args:
+            interval: The interval in seconds between each weighting.
+        """
+        while True:
+            start_time = time.time()
+            await self.set_weights()
+            elapsed = time.time() - start_time
+            if elapsed < settings.weighting_period:
+                sleep_time = settings.weighting_period - elapsed
+                log(f"Sleeping for {sleep_time}")
+                await asyncio.sleep(sleep_time)

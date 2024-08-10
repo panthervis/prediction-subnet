@@ -23,16 +23,15 @@ def serve(
     settings = ValidatorSettings()
     client = CommuneClient(get_node_url())
     subnet_uid = get_subnet_netuid(client, "prediction")
-    print(f"sunet_uid: {subnet_uid}")
+    print(f"subnet_uid: {subnet_uid}")
     validator = Validation(
         keypair,
         subnet_uid,
         client,
         call_timeout=call_timeout,
     )
-    # validator.validation_loop(settings)
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(validator.validation_loop(settings))
+    
+    asyncio.run(validator.validation_loop(settings))
 
 
 if __name__ == "__main__":
