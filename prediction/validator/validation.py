@@ -338,7 +338,7 @@ class Validation(Module):
 
         return {"category": category, "pair": pair, "timestamp": timestamp}
 
-    def sigmoid(self, x, steepness=10):
+    def sigmoid(self, x, steepness=3):
         """Apply a steep sigmoid function to x."""
         return 1 - 1 / (1 + np.exp(-steepness * x))
 
@@ -448,7 +448,9 @@ class Validation(Module):
                     # If there were any None values, replace them with 5 times the average
                     num_none = differences.count(None)
                     if num_none > 0:
+                        print(f"avarage_difference: {average_difference}")
                         average_difference = (average_difference * len(differences) + 5 * average_difference * num_none) / (len(differences) + num_none)
+                        print(f"second: {average_difference}")
                 else:
                     # If all values were None, assign a large average difference
                     average_difference = 10000000
@@ -481,14 +483,13 @@ class Validation(Module):
                     for miner_key, score in remaining_scores.items():
                         normalized_score = self.sigmoid((max_score - score) / (max_score - min_score))
                         scores[miner_key] = normalized_score * settings.max_allowed_weights
-
-            print(f"scores: {scores}")
         
         # the blockchain call to set the weights
         if scores:            
             id_map_key = self.client.query_map_key(self.netuid)
             key_to_id = {v: k for k, v in id_map_key.items()}
             scores = {key_to_id[key]: score for key, score in scores.items() if key in key_to_id}
+            print(f"scores: {scores}")
             _ = _set_weights(settings, scores, self.netuid, self.client, self.key)
 
     async def validation_loop(self, settings: ValidatorSettings) -> None:
