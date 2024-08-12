@@ -22,6 +22,7 @@ import sqlite3
 import asyncio
 import re
 import time
+import math
 from functools import partial
 import numpy as np
 import requests
@@ -32,7 +33,6 @@ from communex.client import CommuneClient
 from communex.module.client import ModuleClient
 from communex.module.module import Module
 from communex.types import Ss58Address
-from communex.misc import get_map_modules
 from substrateinterface import Keypair
 
 from prediction.validator._config import ValidatorSettings
@@ -41,12 +41,11 @@ from prediction.utils import get_random_future_timestamp, log, update_repository
 IP_REGEX = re.compile(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+")
 
 
-def set_weights(
+def _set_weights(
     settings: ValidatorSettings,
     score_dict: dict[
         int, float
     ],  # implemented as a float score from 0 to 1, one being the best
-    # you can implement your custom logic for scoring
     netuid: int,
     client: CommuneClient,
     key: Keypair,
@@ -61,58 +60,23 @@ def set_weights(
         key: The keypair for signing transactions.
     """
 
-    # you can replace with `max_allowed_weights` with the amount your subnet allows
-    score_dict = cut_to_max_allowed_weights(score_dict, settings.max_allowed_weights)
-
     # Create a new dictionary to store the weighted scores
     weighted_scores: dict[int, int] = {}
 
-    # Calculate the sum of all inverted scores
-    scores = sum(score_dict.values())
-
-    # process the scores into weights of type dict[int, int] 
     # Iterate over the items in the score_dict
     for uid, score in score_dict.items():
-        # Calculate the normalized weight as an integer
-        weight = int(score * 1000 / scores)
-
-        # Add the weighted score to the new dictionary
-        weighted_scores[uid] = weight
-
+        weighted_scores[uid] = math.floor(score)
 
     # filter out 0 weights
-    weighted_scores = {k: v for k, v in weighted_scores.items() if v != 0}
+    weighted_scores = {k: v for k, v in score_dict.items() if v != 0}
 
     uids = list(weighted_scores.keys())
     weights = list(weighted_scores.values())
     # send the blockchain call
     print(f"uids=============: {uids}")
     print(f"weights=============: {weights}")
-    # uids = [1]
-    # weights = [5]
+
     client.vote(key=key, uids=uids, weights=weights, netuid=netuid)
-
-def cut_to_max_allowed_weights(
-    score_dict: dict[int, float], max_allowed_weights: int
-) -> dict[int, float]:
-    """
-    Cut the scores to the maximum allowed weights.
-
-    Args:
-        score_dict: A dictionary mapping miner UIDs to their scores.
-        max_allowed_weights: The maximum allowed weights (default: 420).
-
-    Returns:
-        A dictionary mapping miner UIDs to their scores, where the scores have been cut to the maximum allowed weights.
-    """
-    # sort the score by highest to lowest
-    sorted_scores = sorted(score_dict.items(), key=lambda x: x[1], reverse=True)
-
-    # cut to max_allowed_weights
-    cut_scores = sorted_scores[:max_allowed_weights]
-
-    return dict(cut_scores)
-
 
 def extract_address(string: str):
     """
@@ -194,7 +158,6 @@ class Validation(Module):
         self.netuid = netuid
         self.val_model = "foo"
         self.call_timeout = call_timeout
-        self.pending_validations = defaultdict(dict)  
         self.initialize_database()
 
     def initialize_database(self):
@@ -203,16 +166,21 @@ class Validation(Module):
         
         c.execute('''CREATE TABLE IF NOT EXISTS predictions
                      (timestamp, miner_key, prediction REAL, category, pair)''')
-    
+        c.execute('''CREATE TABLE IF NOT EXISTS Prices
+                 (timestamp, category, pair, price REAL)''')
+
     def insert_prediction(self, timestamp, miner_key, prediction, category, pair):
         c = self.conn.cursor()
-        print(f"prediction: {prediction}")
         if prediction is None or prediction == 'None' or prediction == "":
-            print("here------------")
             prediction = -1
             
         c.execute("INSERT INTO predictions VALUES (?,?,?,?,?)", (timestamp, miner_key, prediction, category, pair))
 
+        self.conn.commit()
+    
+    def insert_into_prices(self, timestamp, category, pair):
+        c = self.conn.cursor()
+        c.execute("INSERT INTO Prices (timestamp, category, pair) VALUES (?,?,?)", (timestamp, category, pair))
         self.conn.commit()
 
     def schedule_tasks(self, category, pair):
@@ -268,25 +236,11 @@ class Validation(Module):
             miner_answer = miner_answer["answer"]
 
         except Exception as e:
-            log(f"Miner {module_ip}:{module_port} failed to generate an answer")
-            print(e)
+            # log(f"Miner {module_ip}:{module_port} failed to generate an answer")
+            # print(e)
             miner_answer = None
         
         return miner_id, miner_key, miner_answer
-
-    def _base_score_miner(self, miner_answer: str | None, real_answer: str) -> float:
-        """
-        Score the generated answer against the validator's own answer.
-
-        Args:
-            miner_answer: The generated answer from the miner module.
-
-        Returns:
-            The score assigned to the miner's answer.
-        """
-        if not miner_answer or (isinstance(miner_answer, dict) and 'prediction' not in miner_answer) or not isinstance(miner_answer, (int, float)):
-            return 10000000000
-        return abs(float(real_answer) - miner_answer)
 
     async def fetch_real_data(self, category, pair, unix_timestamp):
         # url = 'https://api.binance.com/api/v3/klines'
@@ -316,7 +270,10 @@ class Validation(Module):
         
         # For kraken
         since_timestamp = int(target_time.timestamp()) * 1000  # Kraken uses milliseconds
-
+        print(f"pair: {pair}")
+        if pair == 'BTCUSDT':
+            pair = "XXBTZUSD"
+            
         params = {
             'pair': pair,
             'interval': interval,
@@ -374,49 +331,15 @@ class Validation(Module):
         category = "crypto"
         pair = "BTCUSDT"
         timestamp = get_random_future_timestamp()
+        
+        # save prompt data in Prices table in DB.
+        self.insert_into_prices(timestamp, category, pair)
 
         return {"category": category, "pair": pair, "timestamp": timestamp}
 
     def sigmoid(self, x):
         """Apply the sigmoid function to x."""
-        return 1 / (1 + np.exp(-x))
-    
-    def store_prediction(self, timestamp, miner_key, prediction):
-        self.pending_validations[timestamp][miner_key] = prediction
-        
-    async def delayed_validation(self, category, pair, timestamp):
-        base_score_dict: dict[int, float] = {}
-        
-        while True:
-            time_to_wait = (datetime.fromtimestamp(float(timestamp)) - datetime.now()).total_seconds()
-            if time_to_wait > 0:
-                await asyncio.sleep(time_to_wait)
-                break
-            else:
-                print("Waiting for time_to_wait to be greater than zero")
-                
-        real_data = await self.fetch_real_data(category, pair, timestamp)
-        
-        predictions = self.pending_validations.pop(timestamp, None)
-        print(f"poped_predictions: {predictions}")
-        if predictions:
-            for miner_key, miner_data in predictions.items():
-                base_score = self._base_score_miner(miner_data, real_data)
-                base_score_dict[miner_key] = base_score
-            
-            if not base_score_dict:
-                log("No miner managed to give a valid answer")
-                return None
-
-            min_score = min(base_score_dict.values())
-            max_score = max(base_score_dict.values())
-            
-            if min_score == max_score:
-                score_dict = {uid: 0.5 for uid in base_score_dict.keys()}
-            else:
-                score_dict = {uid: self.sigmoid((score - min_score) / (max_score - min_score)) for uid, score in base_score_dict.items()}
-            
-            return score_dict
+        return 1 - 1 / (1 + np.exp(-x))
 
     async def send_request(
         self, netuid: int
@@ -457,34 +380,16 @@ class Validation(Module):
         tasks = [task for task in tasks if task is not None]
         predictions = await asyncio.gather(*tasks, return_exceptions=True)
         
-        print(f"predictions: {predictions}")
-        
         # store prediction values in DB
         for prediction in predictions:
             if isinstance(prediction, Exception):
                 continue
             miner_id, miner_key, predicted_value = prediction
             self.insert_prediction(future_timestamp, miner_key, predicted_value, category, pair)
-
-        # for miner_id, miner_key, prediction in predictions:
-        #     self.store_prediction(future_timestamp, miner_key, prediction)
-        # print(f"stored prediction: {self.pending_validations}")
-
-        # scores = await self.delayed_validation(category, pair, future_timestamp)
-        # validation_task = asyncio.create_task(self.delayed_validation(category, pair, future_timestamp))
-        # exclude self in scores
-        
-        # combining with original score
-        # all_modules = get_map_modules(self.client, self.netuid)
-        # the blockchain call to set the weights
-        # _ = set_weights(settings, scores, self.netuid, self.client, self.key)
     
     async def set_weights(
         self,
         settings: ValidatorSettings,
-        netuid: int,
-        client: CommuneClient,
-        key: Keypair,
     ) -> None:
         """
         Set weights for miners based on their scores.
@@ -502,34 +407,36 @@ class Validation(Module):
         now = time.time()
 
         # Calculate the start of the weighting period
-        start_time = now - settings.weighting_period
-
+        start_time = now - settings.weighting_period - 3*60
+        print(f"start_time: {start_time}")
         # Retrieve all predictions made within the weighting period
-        c.execute("SELECT * FROM predictions WHERE timestamp >= ?", (start_time,))
-        predictions = c.fetchall()
+        c.execute("""
+            SELECT predictions.*, Prices.price 
+            FROM predictions 
+            INNER JOIN Prices ON predictions.timestamp = Prices.timestamp 
+            WHERE predictions.timestamp >= ? AND Prices.price IS NOT NULL
+        """, (start_time,))
 
+        predictions = c.fetchall()
+        
         # Group predictions by miner key
         grouped_predictions = defaultdict(list)
-        for timestamp, category, pair, miner_key, predicted_value in predictions:
-            grouped_predictions[miner_key].append((timestamp, category, pair, predicted_value))
+        for timestamp, miner_key, predicted_value, category, pair, price in predictions:
+            grouped_predictions[miner_key].append((timestamp, category, pair, predicted_value, price))
 
         # Calculate scores for each miner
         scores = {}
         for miner_key, miner_predictions in grouped_predictions.items():
             differences = []
-            for timestamp, category, pair, predicted_value in miner_predictions:
-                # Fetch the real value
-                real_value = self.fetch_real_data(category, pair, timestamp)
-
+            for timestamp, category, pair, predicted_value, price in miner_predictions:                
                 # Calculate the difference
-                if predicted_value is None:
+                if predicted_value == -1:
                     difference = None
                 else:
-                    difference = abs(real_value - predicted_value)
+                    difference = abs(float(price) - float(predicted_value))
                 
                 differences.append(difference)
 
-            # Calculate the average difference
             # Calculate the average difference
             if differences:
                 # Remove None values
@@ -538,7 +445,7 @@ class Validation(Module):
                 if differences:
                     average_difference = sum(differences) / len(differences)
                     # If there were any None values, replace them with 5 times the average
-                    num_none = len(differences) - len(differences)
+                    num_none = differences.count(None)
                     if num_none > 0:
                         average_difference = (average_difference * len(differences) + 5 * average_difference * num_none) / (len(differences) + num_none)
                 else:
@@ -548,13 +455,30 @@ class Validation(Module):
                 # If the miner has no predictions, assign a large average difference
                 average_difference = 1000000
 
-            # Apply the sigmoid function to the average difference
-            score = 1 / (1 + math.exp(average_difference))
-
             # Store the score
-            scores[miner_key] = score
+            scores[miner_key] = average_difference
+        
+        # Normalize the scores
+        if scores:
+            min_score = min(scores.values())
+            max_score = max(scores.values())
+            for miner_key, score in scores.items():
+                # Apply the sigmoid function to the score
+                if min_score == max_score:
+                    scores[miner_key] = 0.5
+                else:
+                    normalized_score = self.sigmoid((score - min_score) / (max_score - min_score))
+                    scores[miner_key] = normalized_score * settings.max_allowed_weights    
+            
+            print(f"scores: {scores}")
+        
+        # the blockchain call to set the weights
+        if scores:            
+            id_map_key = self.client.query_map_key(self.netuid)
+            key_to_id = {v: k for k, v in id_map_key.items()}
+            scores = {key_to_id[key]: score for key, score in scores.items() if key in key_to_id}
+            _ = _set_weights(settings, scores, self.netuid, self.client, self.key)
 
-        # ... existing code ...
     async def validation_loop(self, settings: ValidatorSettings) -> None:
         """
         Run the validation loop continuously based on the provided settings.
@@ -564,11 +488,10 @@ class Validation(Module):
         """
         # Create two tasks that run concurrently
         task1 = asyncio.create_task(self.send_request_loop(settings))
-        # task2 = asyncio.create_task(self.set_weights_loop(settings))
-
+        task2 = asyncio.create_task(self.set_weights_loop(settings))
+        task3 = asyncio.create_task(self.get_price_loop(settings))
         # Wait for both tasks to complete
-        # await asyncio.gather(task1, task2)
-        await asyncio.gather(task1)
+        await asyncio.gather(task1, task2, task3)
 
     async def send_request_loop(self, settings: ValidatorSettings) -> None:
         """
@@ -584,7 +507,7 @@ class Validation(Module):
             elapsed = time.time() - start_time
             if elapsed < settings.iteration_interval:
                 sleep_time = settings.iteration_interval - elapsed
-                log(f"Sleeping for {sleep_time}")
+                log(f"Sending requests Sleeping for {sleep_time}")
                 await asyncio.sleep(sleep_time)
 
     async def set_weights_loop(self, settings: ValidatorSettings) -> None:
@@ -596,9 +519,40 @@ class Validation(Module):
         """
         while True:
             start_time = time.time()
-            await self.set_weights()
+            await self.set_weights(settings)
             elapsed = time.time() - start_time
             if elapsed < settings.weighting_period:
                 sleep_time = settings.weighting_period - elapsed
-                log(f"Sleeping for {sleep_time}")
+                log(f"Setting weights Sleeping for {sleep_time}")
+                await asyncio.sleep(sleep_time)
+
+    async def get_price_loop(self, settings: ValidatorSettings) -> None:
+        """
+        Continuously get actual price for the future timestamp in every 1 min using Kraken API.
+
+        Args:
+            interval: The interval in seconds between each weighting.
+        """
+        while True:
+            start_time = time.time()
+
+            # Fetch the first record in Prices table where price is still empty
+            c = self.conn.cursor()
+            c.execute("SELECT * FROM Prices WHERE price IS NULL ORDER BY timestamp ASC LIMIT 1")
+            record = c.fetchone()
+
+            if record:
+                timestamp, category, pair, _ = record
+
+                # Fetch the real data
+                real_data = await self.fetch_real_data(category, pair, timestamp)
+
+                # Update the price in the Prices table
+                c.execute("UPDATE Prices SET price = ? WHERE timestamp = ? AND category = ? AND pair = ?", (real_data, timestamp, category, pair))
+                self.conn.commit()
+
+            elapsed = time.time() - start_time
+            if elapsed < settings.get_real_data_interval:
+                sleep_time = settings.get_real_data_interval - elapsed
+                log(f"Price loop Sleeping for {sleep_time}")
                 await asyncio.sleep(sleep_time)
