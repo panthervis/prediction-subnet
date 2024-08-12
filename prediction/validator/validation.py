@@ -65,7 +65,7 @@ def _set_weights(
 
     # Iterate over the items in the score_dict
     for uid, score in score_dict.items():
-        weighted_scores[uid] = math.floor(score)
+        weighted_scores[uid] = int(score)
 
     # filter out 0 weights
     weighted_scores = {k: v for k, v in score_dict.items() if v != 0}
@@ -77,6 +77,7 @@ def _set_weights(
     print(f"weights=============: {weights}")
 
     client.vote(key=key, uids=uids, weights=weights, netuid=netuid)
+    print("Setting miner weights done")
 
 def extract_address(string: str):
     """
@@ -166,7 +167,7 @@ class Validation(Module):
         
         c.execute('''CREATE TABLE IF NOT EXISTS predictions
                      (timestamp, miner_key, prediction REAL, category, pair)''')
-        c.execute('''CREATE TABLE IF NOT EXISTS Prices
+        c.execute('''CREATE TABLE IF NOT EXISTS prices
                  (timestamp, category, pair, price REAL)''')
 
     def insert_prediction(self, timestamp, miner_key, prediction, category, pair):
@@ -180,7 +181,7 @@ class Validation(Module):
     
     def insert_into_prices(self, timestamp, category, pair):
         c = self.conn.cursor()
-        c.execute("INSERT INTO Prices (timestamp, category, pair) VALUES (?,?,?)", (timestamp, category, pair))
+        c.execute("INSERT INTO prices (timestamp, category, pair) VALUES (?,?,?)", (timestamp, category, pair))
         self.conn.commit()
 
     def schedule_tasks(self, category, pair):
@@ -270,7 +271,7 @@ class Validation(Module):
         
         # For kraken
         since_timestamp = int(target_time.timestamp()) * 1000  # Kraken uses milliseconds
-        print(f"pair: {pair}")
+
         if pair == 'BTCUSDT':
             pair = "XXBTZUSD"
             
@@ -332,14 +333,14 @@ class Validation(Module):
         pair = "BTCUSDT"
         timestamp = get_random_future_timestamp()
         
-        # save prompt data in Prices table in DB.
+        # save prompt data in prices table in DB.
         self.insert_into_prices(timestamp, category, pair)
 
         return {"category": category, "pair": pair, "timestamp": timestamp}
 
-    def sigmoid(self, x):
-        """Apply the sigmoid function to x."""
-        return 1 - 1 / (1 + np.exp(-x))
+    def sigmoid(self, x, steepness=10):
+        """Apply a steep sigmoid function to x."""
+        return 1 - 1 / (1 + np.exp(-steepness * x))
 
     async def send_request(
         self, netuid: int
@@ -411,10 +412,10 @@ class Validation(Module):
         print(f"start_time: {start_time}")
         # Retrieve all predictions made within the weighting period
         c.execute("""
-            SELECT predictions.*, Prices.price 
+            SELECT predictions.*, prices.price 
             FROM predictions 
-            INNER JOIN Prices ON predictions.timestamp = Prices.timestamp 
-            WHERE predictions.timestamp >= ? AND Prices.price IS NOT NULL
+            INNER JOIN prices ON predictions.timestamp = prices.timestamp 
+            WHERE predictions.timestamp >= ? AND prices.price IS NOT NULL
         """, (start_time,))
 
         predictions = c.fetchall()
@@ -450,26 +451,37 @@ class Validation(Module):
                         average_difference = (average_difference * len(differences) + 5 * average_difference * num_none) / (len(differences) + num_none)
                 else:
                     # If all values were None, assign a large average difference
-                    average_difference = 1000000
+                    average_difference = 10000000
             else:
                 # If the miner has no predictions, assign a large average difference
-                average_difference = 1000000
+                average_difference = 10000000
 
             # Store the score
             scores[miner_key] = average_difference
         
         # Normalize the scores
         if scores:
-            min_score = min(scores.values())
-            max_score = max(scores.values())
             for miner_key, score in scores.items():
-                # Apply the sigmoid function to the score
-                if min_score == max_score:
-                    scores[miner_key] = 0.5
-                else:
-                    normalized_score = self.sigmoid((score - min_score) / (max_score - min_score))
-                    scores[miner_key] = normalized_score * settings.max_allowed_weights    
+                if score == 10000000:
+                    scores[miner_key] = 0
             
+            remaining_scores = {key: score for key, score in scores.items() if score != 0}        
+
+            if remaining_scores:
+                min_score = min(remaining_scores.values())
+                max_score = max(remaining_scores.values())
+
+                if max_score == min_score:
+                    # If all scores are equal, assign a uniform weight
+                    for miner_key in remaining_scores:
+                        scores[miner_key] = settings.max_allowed_weights
+
+                else:
+                    # Normalize the remaining miners' scores
+                    for miner_key, score in remaining_scores.items():
+                        normalized_score = self.sigmoid((max_score - score) / (max_score - min_score))
+                        scores[miner_key] = normalized_score * settings.max_allowed_weights
+
             print(f"scores: {scores}")
         
         # the blockchain call to set the weights
@@ -536,9 +548,9 @@ class Validation(Module):
         while True:
             start_time = time.time()
 
-            # Fetch the first record in Prices table where price is still empty
+            # Fetch the first record in prices table where price is still empty
             c = self.conn.cursor()
-            c.execute("SELECT * FROM Prices WHERE price IS NULL ORDER BY timestamp ASC LIMIT 1")
+            c.execute("SELECT * FROM prices WHERE price IS NULL ORDER BY timestamp ASC LIMIT 1")
             record = c.fetchone()
 
             if record:
@@ -547,8 +559,8 @@ class Validation(Module):
                 # Fetch the real data
                 real_data = await self.fetch_real_data(category, pair, timestamp)
 
-                # Update the price in the Prices table
-                c.execute("UPDATE Prices SET price = ? WHERE timestamp = ? AND category = ? AND pair = ?", (real_data, timestamp, category, pair))
+                # Update the price in the prices table
+                c.execute("UPDATE prices SET price = ? WHERE timestamp = ? AND category = ? AND pair = ?", (real_data, timestamp, category, pair))
                 self.conn.commit()
 
             elapsed = time.time() - start_time
