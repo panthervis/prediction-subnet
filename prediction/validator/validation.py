@@ -71,7 +71,7 @@ def _set_weights(
     weighted_scores = {k: v for k, v in score_dict.items() if v != 0}
 
     uids = list(weighted_scores.keys())
-    weights = list(weighted_scores.values())
+    weights = list(map(int, weighted_scores.values()))
     # send the blockchain call
     print(f"uids=============: {uids}")
     print(f"weights=============: {weights}")
