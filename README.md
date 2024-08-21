@@ -40,7 +40,7 @@ python3 -m prediction.validator.cli <name-of-your-com-key>
 Start your miner by running the miner application. Ensure your key is correctly configured.
 
 ```sh
-python3 -m prediction.validator.cli <name-of-your-com-key>
+python3 -m prediction.miner.cli <name-of-your-com-key>
 ```
 
 ## License

@@ -86,7 +86,7 @@ def extract_address(string: str):
     return re.search(IP_REGEX, string)
 
 
-def get_subnet_netuid(clinet: CommuneClient, subnet_name: str = "prediction"):
+def get_subnet_netuid(client: CommuneClient, subnet_name: str = "prediction"):
     """
     Retrieve the network UID of the subnet.
 
@@ -101,7 +101,7 @@ def get_subnet_netuid(clinet: CommuneClient, subnet_name: str = "prediction"):
         ValueError: If the subnet is not found.
     """
 
-    subnets = clinet.query_map_subnet_names()
+    subnets = client.query_map_subnet_names()
     for netuid, name in subnets.items():
         if name == subnet_name:
             return netuid
@@ -157,7 +157,6 @@ class Validation(Module):
         self.client = client
         self.key = key
         self.netuid = netuid
-        self.val_model = "foo"
         self.call_timeout = call_timeout
         self.initialize_database()
 
