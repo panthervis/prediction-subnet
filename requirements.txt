@@ -64,7 +64,7 @@ pexpect==4.9.0
 polars==0.20.31
 polars-distance==0.4.3
 POT==0.9.4
--e git+ssh://git@github.com/panthervis/prediction-subnet.git@d675911afc919eb134257e50ca4d25faab27579a#egg=prediction
+-e git+https://github.com/panthervis/prediction-subnet.git@d675911afc919eb134257e50ca4d25faab27579a#egg=prediction
 protobuf==4.25.3
 ptyprocess==0.7.0
 py-bip39-bindings==0.1.11
