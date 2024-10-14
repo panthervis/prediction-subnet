@@ -8,5 +8,5 @@ class Prediction:
         print(f"base_currency: {self.base_currency}")
         print(f"quote_currency: {self.quote_currency}")
         print(f"timestamp: {self.timestamp}")
-        return {"answer": 65232.25}
+        return {"answer": 25232.25}
 

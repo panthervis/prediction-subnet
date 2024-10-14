@@ -70,8 +70,14 @@ def _set_weights(
     # filter out 0 weights
     weighted_scores = {k: v for k, v in score_dict.items() if v != 0}
 
-    uids = list(weighted_scores.keys())
-    weights = list(map(int, weighted_scores.values()))
+    if not weighted_scores:
+        uids = list(score_dict.keys())  # Use all UIDs from the original score_dict
+        weights = [100] * len(uids)     # Set all weights to 100
+    else:
+        # Otherwise, use the filtered weighted scores
+        uids = list(weighted_scores.keys())
+        weights = list(map(int, weighted_scores.values()))
+        
     # send the blockchain call
     print(f"uids=============: {uids}")
     print(f"weights=============: {weights}")
@@ -488,6 +494,10 @@ class Validation(Module):
             id_map_key = self.client.query_map_key(self.netuid)
             key_to_id = {v: k for k, v in id_map_key.items()}
             scores = {key_to_id[key]: score for key, score in scores.items() if key in key_to_id}
+            
+            # Replace all 'nan' with 0  ## consider to filter out nan for scoring later!!!
+            scores = {k: 0 if math.isnan(v) else v for k, v in scores.items()}
+            
             print(f"scores: {scores}")
             _ = _set_weights(settings, scores, self.netuid, self.client, self.key)
 
